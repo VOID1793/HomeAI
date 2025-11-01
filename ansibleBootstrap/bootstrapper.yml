@@ -1,0 +1,62 @@
+- name: Bootstrap for running a basic service (via Docker)
+  hosts: localhost
+  become: true
+
+  tasks:
+    - name: Update & Upgrade APT Packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Docker Installation & Prerequisites
+      
+      block:
+
+        - name: Dependency Installation
+          apt:
+            name:
+              - apt-transport-https
+              - ca-certificates
+              - curl
+              - gnupg
+              - lsb-release
+              - git
+            state: present
+
+        - name: Add Docker GPG Key
+          ansible.builtin.apt_key:
+            url: https://download.docker.com/linux/debian/gpg
+            state: present
+
+        - name: Add Docker Apt Repository
+          ansible.builtin.apt_repository:
+            repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+            state: present
+
+        - name: Update Apt cache again
+          apt:
+            update_cache: yes
+
+        - name: Install Docker Engine
+          apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+            state: present
+
+        - name: Service Check
+          systemd:
+            name: docker
+            state: started
+            enabled: yes
+
+        - name: Run Docker hello-world test container
+          command: docker run --rm hello-world
+          register: docker_test
+          changed_when: false
+          failed_when: docker_test.rc != 0
+
+    - name: Show Docker test output
+      debug:
+        msg: "{{ docker_test.stdout }}"
