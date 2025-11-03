@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      # store models so you don’t re‑download
+      - /opt/HomeAI/models:/models
+    command:
+      [
+        "--model", "mistralai/Mistral-7B-Instruct-v0.2",
+        "--gpu-memory-utilization", "0.9",
+        "--cpu-offload-gb", "1",
+        "--port", "8000",
+        "--host", "0.0.0.0"
+      ]
+    ipc: host
+    restart: unless-stopped
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    depends_on:
+      - vllm
+    environment:
+      - API_URL=http://vllm:8000/v1
+    volumes:
+      - /opt/HomeAI/openwebui_data:/app/backend/data
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    depends_on:
+      - certbot
+    ports:
+      - 443:443
+      - 80:80
+    volumes:
+      - /opt/HomeAI/NGINX/etc/nginx/conf.d:/etc/nginx/conf.d #DIRECTORY WHERE NGINX CONFIGURATION FOLDERS GO
+      - /opt/HomeAI/CERTBOT/etc/letsencrypt:/etc/letsencrypt:ro #CERTIFICATE STORAGE
+      - /opt/HomeAI/CERTBOT/var/www/certbot:/var/www/certbot/:ro #DIRECTORY TO HANDLE ACME CHALLENGES
+    restart: unless-stopped
+
+  certbot:
+    container_name: certbot
+    image: certbot/dns-cloudflare
+    volumes:
+      - /opt/HomeAI/CERTBOT/etc/letsencrypt:/etc/letsencrypt:rw #CERTIFICATE STORAGE
+      - /opt/HomeAI/CERTBOT/var/www/certbot:/var/www/certbot/:rw #DIRECTORY TO HANDLE ACME CHALLENGES
+      - /opt/HomeAI/CERTBOT/.cfcreds/cloudflare.ini:/etc/letsencrypt/cloudflare.ini:ro #CLOUDFLARE API KEY GOES HERE
+    restart: unless-stopped
+

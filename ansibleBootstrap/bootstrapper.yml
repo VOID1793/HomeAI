@@ -21,6 +21,9 @@
               - gnupg
               - lsb-release
               - git
+              - nvidia-driver
+              - nvidia-container-toolkit
+              - firmware-misc-nonfree
             state: present
 
         - name: Add Docker GPG Key
