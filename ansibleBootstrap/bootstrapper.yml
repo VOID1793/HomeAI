@@ -1,6 +1,12 @@
 - name: Bootstrap for running a basic service (via Docker)
   hosts: localhost
   become: true
+  connection: local
+  gather_facts: true
+
+  vars:
+    docker_arch: "{{ 'arm64' if ansible_architecture in ['aarch64','arm64'] else 'amd64' }}"
+    docker_keyring: /etc/apt/keyrings/docker.gpg
 
   tasks:
     - name: Update & Upgrade APT Packages
@@ -8,23 +14,51 @@
         update_cache: yes
         upgrade: dist
 
-    - name: Docker Installation & Prerequisites
+
+    - name: Check if required repo components are present
+      ansible.builtin.shell: |
+        set -o pipefail
+        grep -qE '^[^#].*\bcontrib\b' /etc/apt/sources.list &&
+        grep -qE '^[^#].*\bnon-free\b' /etc/apt/sources.list &&
+        grep -qE '^[^#].*\bnon-free-firmware\b' /etc/apt/sources.list
+      args:
+        executable: /bin/bash
+      register: repo_components
+      changed_when: false
+      failed_when: false
+
+    - name: Add Required Repositories (quick half‑measure)
+      ansible.builtin.command: sed -i 's/main/main contrib non-free non-free-firmware/' /etc/apt/sources.list
+      when: repo_components.rc != 0
+
+      
+    - name: Update & Upgrade APT Packages Again
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Docker Installation & Other Prerequisites
       
       block:
 
         - name: Dependency Installation
           apt:
             name:
-              - apt-transport-https
               - ca-certificates
               - curl
+              - wget
               - gnupg
               - lsb-release
               - git
               - nvidia-driver
               - nvidia-container-toolkit
               - firmware-misc-nonfree
+              - python3
+              - python3-venv
+              - python3-pip
+              - python3-apt
             state: present
+            update_cache: yes
 
         - name: Add Docker GPG Key
           ansible.builtin.apt_key:
@@ -33,7 +67,7 @@
 
         - name: Add Docker Apt Repository
           ansible.builtin.apt_repository:
-            repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+            repo: "deb [arch={{ docker_arch }}] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
             state: present
 
         - name: Update Apt cache again
@@ -46,6 +80,8 @@
               - docker-ce
               - docker-ce-cli
               - containerd.io
+              - docker-buildx-plugin
+              - docker-compose-plugin
             state: present
 
         - name: Service Check
@@ -63,3 +99,22 @@
     - name: Show Docker test output
       debug:
         msg: "{{ docker_test.stdout }}"
+
+
+    - name: Configure NVIDIA runtime for Docker
+      ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
+      register: nvidia_ctk
+      changed_when: >
+        (nvidia_ctk.rc == 0) and
+        (
+          ('updated' in (nvidia_ctk.stdout | default(''))) or
+          ('updated' in (nvidia_ctk.stderr | default('')))
+        )
+      failed_when: nvidia_ctk.rc not in [0]
+      notify: restart docker
+
+    - name: restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+        enabled: true
