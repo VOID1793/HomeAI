@@ -83,6 +83,16 @@
               - docker-buildx-plugin
               - docker-compose-plugin
             state: present
+            
+        - name: Validate Nvidia driver with nvidia-smi
+          command: nvidia-smi
+          register: nvidia_smi_output
+          changed_when: false
+          failed_when: nvidia_smi_output.rc != 0
+
+        - name: Show GPU info
+          debug:
+            msg: "{{ nvidia_smi_output.stdout }}"
 
         - name: Service Check
           systemd:

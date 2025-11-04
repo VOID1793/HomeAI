@@ -4,6 +4,8 @@ export DEBIAN_FRONTEND=noninteractive
 
 exec > >(tee -a /var/log/homeai_bootstrap.log) 2>&1
 
+apt-get install sudo -y
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "Please run as root (e.g., sudo -s)"; exit 1
 fi
@@ -11,6 +13,7 @@ fi
 echo "BOOTSRAPPING SYSTEM FOR HOMEAI"
 echo "NOTE: This ecosystem is intended to be installed on a Debian System \
 functionality is not promised on a system of any other type!"
+
 
 echo "Setting up service account..."
 if ! id "ai-overlord" &>/dev/null; then
@@ -50,9 +53,9 @@ echo "Creating project directories in /opt..."
 
 install -d -o 10010 -g 10010 -m 0755  /opt/HomeAI/models
 install -d -o 10010 -g 10010 -m 0755  /opt/HomeAI/openwebui_data
-install -d -o 10010 -g 10010 -m 0755  /opt/HomeAI/NGINX/etc/nginx/conf.d
-install -d -o root -g root -m 700 /opt/HomeAI/CERTBOT/etc/letsencrypt
-install -d -o 10010 -g 10010 -m 0755  /opt/HomeAI/CERTBOT/var/www/certbot
+install -d -o 10010 -g 101 -m 0755  /opt/HomeAI/NGINX/etc/nginx/conf.d
+install -d -o root -g 101 -m 740 /opt/HomeAI/CERTBOT/etc/letsencrypt
+install -d -o 10010 -g 101 -m 0755  /opt/HomeAI/CERTBOT/var/www/certbot
 install -d -o root -g root -m 700 /opt/HomeAI/CERTBOT/.cfcreds
 
 touch /opt/HomeAI/CERTBOT/.cfcreds/cloudflare.ini
@@ -64,8 +67,14 @@ printf("\n")
 echo "dns_cloudflare_api_token = ${TOKEN}" > /opt/HomeAI/CERTBOT/.cfcreds/cloudflare.ini
 TOKEN=""
 
-echo "Bringing up the stack! "
+echo "Setting NGINX Configuration... "
+sudo -u ai-overlord -H bash -lc 'cp ~/HomeAI/conf/ai-overlord.conf /opt/HomeAI/NGINX/etc/nginx/conf.d'
 
+echo "Injecting daily NGINX reload cron job... "
+echo "0 3 * * * root docker exec nginx nginx -s reload" > /etc/cron.d/nginx-reload
+chmod 644 /etc/cron.d/nginx-reload
+
+echo "Bringing up the stack! "
 sudo -u ai-overlord -H bash -lc 'cd ~/HomeAI && docker compose up -d'
 
 sudo docker ps
