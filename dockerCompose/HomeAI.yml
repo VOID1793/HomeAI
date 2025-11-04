@@ -4,9 +4,6 @@ services:
   vllm:
     image: vllm/vllm-openai:latest
     container_name: vllm
-    runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       # store models so you don’t re‑download
       - /opt/HomeAI/models:/models
@@ -19,6 +16,7 @@ services:
         "--host", "0.0.0.0"
       ]
     ipc: host
+    gpus: all
     restart: unless-stopped
 
   openwebui:
@@ -48,10 +46,25 @@ services:
 
   certbot:
     container_name: certbot
-    image: certbot/dns-cloudflare
+    image: certbot/dns-cloudflare:latest
     volumes:
       - /opt/HomeAI/CERTBOT/etc/letsencrypt:/etc/letsencrypt:rw #CERTIFICATE STORAGE
       - /opt/HomeAI/CERTBOT/var/www/certbot:/var/www/certbot/:rw #DIRECTORY TO HANDLE ACME CHALLENGES
-      - /opt/HomeAI/CERTBOT/.cfcreds/cloudflare.ini:/etc/letsencrypt/cloudflare.ini:ro #CLOUDFLARE API KEY GOES HERE
+      - /opt/HomeAI/CERTBOT/.cfcreds/cloudflare.ini:/etc/letsencrypt/cloudflare.ini:ro #CLOUDFLARE API KEY GOES HERE (set chmod 600 on host)
+    
+    entrypoint: >
+      /bin/sh -c "
+      certbot certonly --non-interactive --agree-tos --no-eff-email
+        --email you@example.com
+        --dns-cloudflare
+        --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+        --dns-cloudflare-propagation-seconds 30
+        -d example.com -d '*.example.com' || true;
+      while :; do
+        certbot renew --non-interactive \
+          --dns-cloudflare --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini;
+        sleep 12h;
+      done"
+
     restart: unless-stopped
 
